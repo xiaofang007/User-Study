@@ -8,7 +8,7 @@ from PIL import Image
 IMAGE_DIR = "Question/images"
 IMAGE_DIR_BBOX = "Question/images_bbox"
 RESULT_CSV = "Question/results.csv"
-NUM_QUESTIONS_PER_PARTICIPANT = 50
+NUM_QUESTIONS_PER_PARTICIPANT = 10
 
 images_categories = os.listdir(IMAGE_DIR)
 images_bbox_categories = os.listdir(IMAGE_DIR_BBOX)
