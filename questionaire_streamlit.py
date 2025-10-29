@@ -99,6 +99,11 @@ if "answers" not in st.session_state:
     # we'll store dicts of {q_idx_in_bank, left_img, right_img, choice}
     st.session_state.answers = []
 
+# this tracks the last question number we successfully saved,
+# so we never double-save that question
+if "last_saved_qnum" not in st.session_state:
+    st.session_state.last_saved_qnum = None
+
 
 #### Saving results to google form via POST ####
 def get_form_config():
@@ -183,6 +188,7 @@ Note that in some images, the vehicle has been edited.
 current_step = st.session_state.q_index
 total_steps = len(st.session_state.question_order)
 
+
 # If we're DONE:
 if current_step >= total_steps:
     succ, fail = submit_all_answers_to_google_form()
@@ -230,24 +236,40 @@ choice_text = st.radio(
     key=f"choice_{current_step}",
 )
 
-# "Next" button
-if st.button("Next"):
-    if choice_text is None:
-        st.warning("Please select an answer before continuing.")
-    else:
-        # record answer
-        score = CHOICE_TO_SCORE[choice_text]
-        st.session_state.answers.append({
-            "question_number": current_step + 1,
-            "left_img": pair["left"],
-            "right_img": pair["right"],
-            "group": pair["group"],
-            "choice": choice_text,
-            "score": score,
-        })
+is_last_question = (current_step == total_steps - 1)
+button_label = "Submit" if is_last_question else "Next"
 
-        # move to next
-        st.session_state.q_index += 1
 
-        # Rerun to refresh UI
-        st.rerun()
+with st.form(key=f"form_{current_step}"):
+    submitted = st.form_submit_button(button_label)
+    if submitted:
+        if choice_text is None:
+            st.warning("Please select an answer before continuing.")
+        else:
+            current_question_number = current_step + 1
+            
+            if st.session_state.last_saved_qnum == current_question_number:
+                # We already stored this one. Ignore the spam click.
+                st.info("Answer already recorded, loading next...")
+            
+            # record answer
+            else:
+                score = CHOICE_TO_SCORE[choice_text]
+                st.session_state.answers.append({
+                    "question_number": current_step + 1,
+                    "left_img": pair["left"],
+                    "right_img": pair["right"],
+                    "group": pair["group"],
+                    "choice": choice_text,
+                    "score": score,
+                })
+                
+                # mark this question as saved   
+                st.session_state.last_saved_qnum = current_question_number
+
+                # move to next
+                st.session_state.q_index += 1
+
+                # Rerun to refresh UI
+                time.sleep(0.2)
+                st.rerun()
