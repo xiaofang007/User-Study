@@ -4,14 +4,59 @@ import os
 import pandas as pd
 from datetime import datetime
 from PIL import Image
+import requests
+import time
 
+### Admin Login ###
+st.sidebar.title("🔒 Admin Login")
+admin_pw_input = st.sidebar.text_input("Enter admin password:", type="password")
+
+# show the admin panel if password is correct
+if admin_pw_input == st.secrets.get("admin_password", "default_pw"):
+    st.sidebar.success("Admin mode activated")
+
+    st.title("Admin Dashboard - Questionnaire Results")
+
+    SHEET_CSV_URL = st.secrets.get("GOOGLE_SHEET_CSV_URL", "")
+
+    if not SHEET_CSV_URL:
+        st.warning("please set GOOGLE_SHEET_CSV_URL")
+    else:
+        try:
+            df = pd.read_csv(SHEET_CSV_URL)
+            st.write("### All Responses")
+            st.dataframe(df)
+
+            # "group" average score
+            if "group" in df.columns and "score" in df.columns:
+                avg = df.groupby("group")["score"].mean().reset_index()
+                avg.columns = ["Group", "Average Score"]
+                st.write("### Average Score per Group")
+                st.dataframe(avg)
+
+            # Download button
+            st.download_button(
+                label="⬇️ Download All Results as CSV",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name="results_export.csv",
+                mime="text/csv",
+            )
+
+        except Exception as e:
+            st.error(f"Fail to read data: {e}")
+
+    st.stop()
+
+
+
+### User Questionnaire App ###
 IMAGE_DIR = "Question/images"
 IMAGE_DIR_BBOX = "Question/images_bbox"
 RESULT_CSV = "Question/results.csv"
-NUM_QUESTIONS_PER_PARTICIPANT = 10
+NUM_QUESTIONS_PER_PARTICIPANT = 30
 
-images_categories = os.listdir(IMAGE_DIR)
-images_bbox_categories = os.listdir(IMAGE_DIR_BBOX)
+images_categories = sorted(os.listdir(IMAGE_DIR))
+images_bbox_categories = sorted(os.listdir(IMAGE_DIR_BBOX))
 
 QUESTION_BANK = []
 
@@ -44,8 +89,6 @@ if "participant_id" not in st.session_state:
     st.session_state.participant_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
 if "question_order" not in st.session_state:
-    # pick 30 unique questions from your master bank
-    # if you have fewer than 30, it'll just use them all
     num_to_ask = min(NUM_QUESTIONS_PER_PARTICIPANT, len(QUESTION_BANK))
     st.session_state.question_order = random.sample(range(len(QUESTION_BANK)), k=num_to_ask)
 
@@ -56,23 +99,82 @@ if "answers" not in st.session_state:
     # we'll store dicts of {q_idx_in_bank, left_img, right_img, choice}
     st.session_state.answers = []
 
-def save_results():
-    os.makedirs(os.path.dirname(RESULT_CSV), exist_ok=True)
 
-    df_new = pd.DataFrame(st.session_state.answers)
-    df_new["participant_id"] = st.session_state.participant_id
-    df_new["timestamp"] = datetime.now().isoformat()
+#### Saving results to google form via POST ####
+def get_form_config():
+    """
+    fill in .streamlit/secrets.toml (local) or on
+    Streamlit Cloud -> Settings -> Secrets
+    """
+    try:
+        action_url = st.secrets["FORM_ACTION_URL"]
+        entry_map = {
+            "group": st.secrets["FORM_ENTRY_GROUP"],
+            "left_img": st.secrets["FORM_ENTRY_LEFT_IMG"],
+            "right_img": st.secrets["FORM_ENTRY_RIGHT_IMG"],
+            "score": st.secrets["FORM_ENTRY_SCORE"],
+            "choice": st.secrets["FORM_ENTRY_CHOICE"],
+            "participant_id": st.secrets["FORM_ENTRY_PID"],
+            "timestamp": st.secrets["FORM_ENTRY_TS"],
+        }
+        return action_url, entry_map
+    except Exception as e:
+        st.error(f"cannot find the configuration: {e}")
+        return None, None
+    
 
-    # append to csv
-    if os.path.exists(RESULT_CSV):
-        df_existing = pd.read_csv(RESULT_CSV)
-        df_all = pd.concat([df_existing, df_new], ignore_index=True)
-        df_all.to_csv(RESULT_CSV, index=False)
-    else:
-        df_new.to_csv(RESULT_CSV, index=False)
+def submit_single_row_to_google_form(action_url, entry_map, row):
+    """
+    row is a dict, including keys:
+    group, left_img, right_img, score, participant_id, timestamp
+    send to Google form (formResponse).
+    """
+    payload = {
+        entry_map["group"]: row["group"],
+        entry_map["left_img"]: row["left_img"],
+        entry_map["right_img"]: row["right_img"],
+        entry_map["score"]: row["score"],
+        entry_map["participant_id"]: row["participant_id"],
+        entry_map["timestamp"]: row["timestamp"],
+    }
+    try:
+        r = requests.post(action_url, data=payload, timeout=1000)
+        return 200 <= r.status_code < 300
+    except Exception:
+        return False
 
 
+def submit_all_answers_to_google_form():
+    """
+    write current st.session_state.answers to Google Form.
+    Every answer will be sent as a separate row.
+    """
+    action_url, entry_map = get_form_config()
+    if not action_url or not entry_map:
+        return 0, len(st.session_state.answers)
 
+    success = 0
+    fail = 0
+
+    for ans in st.session_state.answers:
+        ans_to_send = ans.copy()
+        ans_to_send["participant_id"] = st.session_state.participant_id
+        ans_to_send["timestamp"] = datetime.now().isoformat()
+
+        ok = submit_single_row_to_google_form(action_url, entry_map, ans_to_send)
+        if not ok:
+            time.sleep(0.5)
+            ok = submit_single_row_to_google_form(action_url, entry_map, ans_to_send)
+
+        if ok:
+            success += 1
+        else:
+            fail += 1
+
+    return success, fail
+
+
+### ### Main app UI ### ###
 st.title("Rating the Realism of Vehicles in images")
 
 st.markdown("""
@@ -87,10 +189,20 @@ total_steps = len(st.session_state.question_order)
 
 # If we're DONE:
 if current_step >= total_steps:
-    st.success("Thank you! Your responses have been recorded 🙏")
+    succ, fail = submit_all_answers_to_google_form()
+
+    if fail == 0:
+        st.success(f"Thank you! Your responses have been recorded. 🙏")
+    else:
+        st.warning(f"Submissions: {succ} successful, {fail} fail.")
+
+    # clear session_state.answers，avoid resubmission
+    st.session_state.answers = []
+
     st.stop()
 
-# Get the pair for this step
+
+# Get the pair for this step, show current question number
 bank_idx = st.session_state.question_order[current_step]
 pair = QUESTION_BANK[bank_idx]
 left_path = os.path.join(IMAGE_DIR, pair["group"], pair["left"])
@@ -104,11 +216,13 @@ col1, col2 = st.columns(2)
 
 with col1:
     imgL = Image.open(left_path)
-    st.image(left_path, width=imgL.width, caption="Image")
+    display_wl = min(imgL.width, 600)
+    st.image(left_path, width=display_wl, caption="Image")
 
 with col2:
     imgR = Image.open(right_path)
-    st.image(right_path, width=imgR.width, caption="Image where the vehicle is marked with a red dashed box")
+    display_wr = min(imgR.width, 600)
+    st.image(right_path, width=display_wr, caption="Image where the vehicle is marked with a red dashed box")
 
 st.write("How realistic / natural does the vehicle inside the red box look? That is, does it look like a real vehicle that naturally belongs in the scene and doesn't stand out?")
 
@@ -138,10 +252,6 @@ if st.button("Next"):
 
         # move to next
         st.session_state.q_index += 1
-
-        # If that was the last one, save to CSV
-        if st.session_state.q_index >= total_steps:
-            save_results()
 
         # Rerun to refresh UI
         st.rerun()
