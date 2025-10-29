@@ -176,13 +176,13 @@ def submit_all_answers_to_google_form():
 
 
 ### ### Main app UI ### ###
-st.title("Rating the Realism of Vehicles")
+st.title("Rating the Realism of edited Vehicles")
 
 st.markdown("""
-In this questionnaire, you will see pairs of images that show the same scene.
+In this questionnaire, you will see pairs of images showing the same scene.
 The two images are identical, except that in one of them, the vehicle is highlighted with a red dashed box to help you locate it.
-Your task is to rate how real or natural the vehicle in the box looks within the whole image.
-Note that in some images, the vehicle has been edited.
+In some images, the vehicle has been edited to appear camouflaged so it may be harder to notice.
+However, your task is **NOT** to judge whether you can identify the vehicle, but rather to rate how real or natural the edited vehicle looks within the overall image — that is, whether it appears visually consistent with the scene and could exist in the real world."
 """)
 
 current_step = st.session_state.q_index
@@ -219,14 +219,14 @@ col1, col2 = st.columns(2)
 with col1:
     imgL = Image.open(left_path)
     display_wl = min(imgL.width, 600)
-    st.image(left_path, width=display_wl, caption="Image")
+    st.image(left_path, width="stretch", caption="Image")
 
 with col2:
     imgR = Image.open(right_path)
     display_wr = min(imgR.width, 600)
-    st.image(right_path, width=display_wr, caption="Image where the vehicle is marked with a red dashed box")
+    st.image(right_path, width="stretch", caption="Image where the vehicle is marked with a red dashed box")
 
-st.write("How realistic / natural does the vehicle inside the red box look? That is, does it look like a real vehicle that naturally belongs in the scene and doesn't stand out?")
+st.write("How realistic / natural does the vehicle inside the red box look? That is, does it appear to belong naturally in the scene without standing out or drawing attention?")
 
 # Radio buttons for 4-point scale
 choice_text = st.radio(
