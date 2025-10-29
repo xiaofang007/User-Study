@@ -11,7 +11,7 @@ import time
 st.sidebar.title("🔒 Admin Login")
 admin_pw_input = st.sidebar.text_input("Enter admin password:", type="password")
 
-# show the admin panel if password is correct
+# show admin panel if password correct
 if admin_pw_input == st.secrets.get("admin_password", "default_pw"):
     st.sidebar.success("Admin mode activated")
 
@@ -138,7 +138,7 @@ def submit_single_row_to_google_form(action_url, entry_map, row):
         entry_map["timestamp"]: row["timestamp"],
     }
     try:
-        r = requests.post(action_url, data=payload, timeout=1000)
+        r = requests.post(action_url, data=payload, timeout=10)
         return 200 <= r.status_code < 300
     except Exception:
         return False
@@ -162,10 +162,6 @@ def submit_all_answers_to_google_form():
         ans_to_send["timestamp"] = datetime.now().isoformat()
 
         ok = submit_single_row_to_google_form(action_url, entry_map, ans_to_send)
-        if not ok:
-            time.sleep(0.5)
-            ok = submit_single_row_to_google_form(action_url, entry_map, ans_to_send)
-
         if ok:
             success += 1
         else:
