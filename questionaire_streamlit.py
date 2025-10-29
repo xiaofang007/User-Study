@@ -171,7 +171,7 @@ def submit_all_answers_to_google_form():
 
 
 ### ### Main app UI ### ###
-st.title("Rating the Realism of Vehicles in images")
+st.title("Rating the Realism of Vehicles")
 
 st.markdown("""
 In this questionnaire, you will see pairs of images that show the same scene.
