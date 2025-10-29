@@ -271,5 +271,4 @@ with st.form(key=f"form_{current_step}"):
                 st.session_state.q_index += 1
 
                 # Rerun to refresh UI
-                time.sleep(0.2)
                 st.rerun()
